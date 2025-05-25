@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二人称アイデンティティ評価</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .element-form {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        
+        .form-row {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .chart-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            height: 400px;
+        }
+
+        .comparison-chart-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            height: 400px;
+        }
+
+        .history-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            background-color: white;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .target-name-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>二人称アイデンティティ評価</h1>
+
+    <div class="target-name-section">
+        <div class="form-row">
+            <label>評価対象者の名前:</label>
+            <input type="text" id="targetName" placeholder="例：田中さん">
+        </div>
+    </div>
+    
+    <div id="elements-container"></div>
+    
+    <button type="button" id="addElement">要素を追加</button>
+    <button type="button" id="calculateTotal">総合評価を計算</button>
+    <button type="button" id="newEvaluation">新規評価</button>
+    
+    <div id="result" style="margin-top: 20px; display: none;">
+        <h2>評価結果</h2>
+        <p id="totalScore"></p>
+        <div id="individualScores"></div>
+        <div class="chart-container">
+            <canvas id="resultChart"></canvas>
+        </div>
+    </div>
+
+    <div id="history-section">
+        <h2>評価履歴</h2>
+        <div id="historyList"></div>
+    </div>
+
+    <script>
+        class IdentityEvaluator {
+            constructor() {
+                this.elementCount = 0;
+                this.history = [];
+                this.currentChart = null;
+                this.initializeEventListeners();
+            }
+
+            initializeEventListeners() {
+                document.getElementById('addElement').addEventListener('click', () => this.addElementForm());
+                document.getElementById('calculateTotal').addEventListener('click', () => this.calculateTotalScore());
+                document.getElementById('newEvaluation').addEventListener('click', () => this.startNewEvaluation());
+            }
+
+            startNewEvaluation() {
+                document.getElementById('elements-container').innerHTML = '';
+                document.getElementById('targetName').value = '';
+                document.getElementById('result').style.display = 'none';
+                this.elementCount = 0;
+                this.addElementForm();
+
+                if (this.currentChart) {
+                    this.currentChart.destroy();
+                    this.currentChart = null;
+                }
+            }
+
+            addElementForm() {
+                const container = document.getElementById('elements-container');
+                const elementId = this.elementCount++;
+                
+                const elementForm = document.createElement('div');
+                elementForm.className = 'element-form';
+                elementForm.id = `element-${elementId}`;
+                
+                elementForm.innerHTML = `
+                    <div class="element-header">
+                        <h3>要素 ${elementId + 1}</h3>
+                        <button type="button" class="remove-element" onclick="evaluator.removeElement(${elementId})">削除</button>
+                    </div>
+                    <div class="form-row">
+                        <label>要素の名前:</label>
+                        <input type="text" class="element-name" placeholder="例：趣味、仕事など">
+                    </div>
+                    <div class="form-row">
+                        <label>普遍性（その要素を持つ人の数）:</label>
+                        <input type="number" class="universality" required min="1">
+                    </div>
+                    <div class="form-row">
+                        <label>体験量（回数）:</label>
+                        <input type="number" class="experience" required min="0" step="1">
+                    </div>
+                    <div class="form-row">
+                        <label>継続期間（月数）:</label>
+                        <input type="number" class="duration" required min="0" step="1">
+                    </div>
+                    <div class="form-row">
+                        <label>過去性（最後の体験から経過した月数）:</label>
+                        <input type="number" class="pastness" required min="0" step="1">
+                    </div>
+                `;
+                
+                container.appendChild(elementForm);
+            }
+
+            removeElement(elementId) {
+                const element = document.getElementById(`element-${elementId}`);
+                if (element) {
+                    element.remove();
+                }
+            }
+
+            calculateScore(universality, experience, duration, pastness) {
+                const normalizedExperience = Math.log(experience + 1);
+                const normalizedDuration = Math.log(duration + 1);
+                
+                return (1 / universality) + 
+                       normalizedExperience + 
+                       normalizedDuration + 
+                       (1 / (pastness + 1));
+            }
+
+            calculateTotalScore() {
+                const elements = document.getElementsByClassName('element-form');
+                if (elements.length === 0) {
+                    alert('少なくとも1つの要素を追加してください。');
+                    return;
+                }
+
+                const targetName = document.getElementById('targetName').value || '名称未設定';
+                let totalScore = 0;
+                const individualScores = [];
+                const elementDetails = [];
+
+                for (const element of elements) {
+                    const name = element.querySelector('.element-name').value || `要素 ${individualScores.length + 1}`;
+                    const universality = parseFloat(element.querySelector('.universality').value);
+                    const experience = parseFloat(element.querySelector('.experience').value);
+                    const duration = parseFloat(element.querySelector('.duration').value);
+                    const pastness = parseFloat(element.querySelector('.pastness').value);
+
+                    if (isNaN(universality) || isNaN(experience) || isNaN(duration) || isNaN(pastness)) {
+                        alert('すべての値を入力してください。');
+                        return;
+                    }
+
+                    const score = this.calculateScore(universality, experience, duration, pastness);
+                    totalScore += score;
+                    individualScores.push({ name, score });
+                    elementDetails.push({
+                        name,
+                        universality,
+                        experience,
+                        duration,
+                        pastness,
+                        score
+                    });
+                }
+
+                this.displayResults(totalScore, individualScores);
+                this.addToHistory(targetName, totalScore, elementDetails);
+            }
+
+            displayResults(totalScore, individualScores) {
+                const resultDiv = document.getElementById('result');
+                const totalScoreElement = document.getElementById('totalScore');
+                const individualScoresElement = document.getElementById('individualScores');
+
+                totalScoreElement.textContent = `総合スコア: ${totalScore.toFixed(4)}`;
+
+                individualScoresElement.innerHTML = '<h3>個別スコア:</h3>' + 
+                    individualScores.map(item => 
+                        `<p>${item.name}: ${item.score.toFixed(4)}</p>`
+                    ).join('');
+
+                resultDiv.style.display = 'block';
+
+                this.updateChart(individualScores);
+            }
+
+            updateChart(scores) {
+                if (this.currentChart) {
+                    this.currentChart.destroy();
+                }
+
+                const ctx = document.getElementById('resultChart').getContext('2d');
+                const labels = scores.map(item => item.name);
+                const data = scores.map(item => item.score);
+
+                const config = {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '要素スコア',
+                            data: data,
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        },
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                };
+
+                this.currentChart = new Chart(ctx, config);
+            }
+
+            addToHistory(targetName, totalScore, elementDetails) {
+                const timestamp = new Date().toLocaleString();
+                const historyItem = {
+                    targetName,
+                    totalScore,
+                    elementDetails,
+                    timestamp
+                };
+                this.history.unshift(historyItem);
+                this.displayHistory();
+            }
+
+            displayHistory() {
+                const historyList = document.getElementById('historyList');
+                historyList.innerHTML = this.history.map(item => `
+                    <div class="history-item">
+                        <div class="history-header">
+                            <h3>${item.targetName}</h3>
+                            <span class="timestamp">${item.timestamp}</span>
+                        </div>
+                        <div>総合スコア: ${item.totalScore.toFixed(4)}</div>
+                        <div class="history-details">
+                            ${item.elementDetails.map(element => `
+                                <div>
+                                    <strong>${element.name}</strong>: ${element.score.toFixed(4)}
+                                    <br>
+                                    <small>
+                                        普遍性: ${element.universality}, 
+                                        体験量: ${element.experience}, 
+                                        継続期間: ${element.duration}, 
+                                        過去性: ${element.pastness}
+                                    </small>
+                                </div>
+                            `).join('<hr>')}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // アプリケーションの初期化
+        const evaluator = new IdentityEvaluator();
+        // 最初の要素フォームを自動的に追加
+        evaluator.addElementForm();
+    </script>
+</body>
+</html>
